@@ -109,6 +109,9 @@ class UNet(nn.Module):
         self.upConvBlock3 = UpConvolution(256, 128)
         self.lastConv = LastConvolution(128, 64, num_classes)
 
+        self.n_channels = input_channel
+        self.n_classes = num_classes
+
     def forward(self, x) -> Tensor:
         x_1 = self.simpleConv(x)
         x_2 = self.downConvBlock1(x_1)
