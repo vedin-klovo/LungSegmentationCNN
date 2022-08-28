@@ -8,7 +8,7 @@ from torchvision import transforms
 class SimpleConvolution(nn.Module):
     def __init__(self, input_channels, output_channels, momentum=0.5):
         super(SimpleConvolution, self).__init__()
-        self.conv = nn.Conv2d(input_channels, output_channels, (3, 3), padding=1)
+        self.conv = nn.Conv2d(input_channels, output_channels, (3, 3), padding='same')
         self.batch_norm = nn.BatchNorm2d(output_channels, momentum=momentum)
         self.ReLU = nn.ReLU()
 
@@ -23,7 +23,7 @@ class SimpleConvolution(nn.Module):
 class Convolution(nn.Module):
     def __init__(self, input_channels, output_channels, momentum=0.5):
         super(Convolution, self).__init__()
-        self.conv = nn.Conv2d(input_channels, output_channels, (3, 3), padding=1)
+        self.conv = nn.Conv2d(input_channels, output_channels, (3, 3), padding='same')
         self.batch_norm = nn.BatchNorm2d(output_channels, momentum=momentum)
         self.ReLU = nn.ReLU()
         self.max_pool = nn.MaxPool2d(2, stride=2, return_indices=True)

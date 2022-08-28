@@ -5,12 +5,8 @@ import logging
 from typing import Tuple
 from enum import IntEnum
 from tqdm import tqdm
-
 from torch import optim
-import torch.nn.functional as F
-
 from unet.unet import UNet
-
 from lung_seg_dataset import MontgomeryDataset, ShenzhenDataset
 from torch.utils.data import DataLoader, random_split
 import wandb
@@ -161,7 +157,7 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f"Using device: {device}")
 
-    net = UNet(input_channel=1, num_classes=2)
+    net = UNet(input_channel=1, num_classes=2, pad=True)
 
     logging.info(f'Network:\n'
                  f'\t{net.n_channels} input channels\n'

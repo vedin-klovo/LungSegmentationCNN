@@ -4,20 +4,24 @@ from torch import Tensor
 from torchvision import transforms
 from PIL import Image
 import numpy as np
+from math import ceil
 
 
 def crop_img(source_tensor: Tensor, target_tensor: Tensor):
     source_tensor_size = source_tensor.size()[2]
     target_tensor_size = target_tensor.size()[2]
     diff = (source_tensor_size - target_tensor_size) // 2
-    return source_tensor[:, :, diff:-diff, diff:-diff]
+    if diff == 0:
+        return source_tensor[:, :, diff:, diff:]
+    else:
+        return source_tensor[:, :, diff:-diff, diff:-diff]
 
 
 class SimpleConvolution(nn.Module):
-    def __init__(self, input_channel, output_channel):
+    def __init__(self, input_channel, output_channel, pad=False):
         super(SimpleConvolution, self).__init__()
-        self.conv1 = nn.Conv2d(input_channel, output_channel, (3, 3))
-        self.conv2 = nn.Conv2d(output_channel, output_channel, (3, 3))
+        self.conv1 = nn.Conv2d(input_channel, output_channel, (3, 3), padding='same' if pad else 'valid')
+        self.conv2 = nn.Conv2d(output_channel, output_channel, (3, 3), padding='same' if pad else 'valid')
         self.Relu = nn.ReLU()
         self.dropout = nn.Dropout2d(0.2)
 
@@ -32,10 +36,10 @@ class SimpleConvolution(nn.Module):
 
 
 class DownConvolution(nn.Module):
-    def __init__(self, input_channel, output_channel):
+    def __init__(self, input_channel, output_channel, pad=False):
         super(DownConvolution, self).__init__()
-        self.conv1 = nn.Conv2d(input_channel, output_channel, (3, 3))
-        self.conv2 = nn.Conv2d(output_channel, output_channel, (3, 3))
+        self.conv1 = nn.Conv2d(input_channel, output_channel, (3, 3), padding='same' if pad else 'valid')
+        self.conv2 = nn.Conv2d(output_channel, output_channel, (3, 3), padding='same' if pad else 'valid')
         self.maxpool = nn.MaxPool2d(2, 2)
         self.Relu = nn.ReLU()
         self.dropout = nn.Dropout2d(0.2)
@@ -52,15 +56,16 @@ class DownConvolution(nn.Module):
 
 
 class UpConvolution(nn.Module):
-    def __init__(self, input_channel, output_channel):
+    def __init__(self, input_channel, output_channel, pad=False):
         super(UpConvolution, self).__init__()
-        self.conv1 = nn.Conv2d(input_channel, output_channel, (3, 3))
-        self.conv2 = nn.Conv2d(output_channel, output_channel, (3, 3))
+        self.conv1 = nn.Conv2d(input_channel, output_channel, (3, 3), padding='same' if pad else 'valid')
+        self.conv2 = nn.Conv2d(output_channel, output_channel, (3, 3), padding='same' if pad else 'valid')
         self.convtranspose = nn.ConvTranspose2d(
             output_channel,
             output_channel // 2,
             (2, 2),
             (2, 2),
+            # padding=(1, 1)
         )
         self.Relu = nn.ReLU()
         self.dropout = nn.Dropout2d(0.2)
@@ -77,10 +82,10 @@ class UpConvolution(nn.Module):
 
 
 class LastConvolution(nn.Module):
-    def __init__(self, input_channel, output_channel, num_classes):
+    def __init__(self, input_channel, output_channel, num_classes, pad=False):
         super(LastConvolution, self).__init__()
-        self.conv1 = nn.Conv2d(input_channel, output_channel, (3, 3))
-        self.conv2 = nn.Conv2d(output_channel, output_channel, (3, 3))
+        self.conv1 = nn.Conv2d(input_channel, output_channel, (3, 3), padding='same' if pad else 'valid')
+        self.conv2 = nn.Conv2d(output_channel, output_channel, (3, 3), padding='same' if pad else 'valid')
         self.conv1d = nn.Conv2d(output_channel, num_classes, (1, 1))
         self.Relu = nn.ReLU()
         self.dropout = nn.Dropout2d(0.2)
@@ -97,18 +102,18 @@ class LastConvolution(nn.Module):
 
 
 class UNet(nn.Module):
-    def __init__(self, input_channel, num_classes):
+    def __init__(self, input_channel, num_classes, pad=False):
         super(UNet, self).__init__()
-        self.simpleConv = SimpleConvolution(input_channel, 64)
-        self.downConvBlock1 = DownConvolution(64, 128)
-        self.downConvBlock2 = DownConvolution(128, 256)
-        self.downConvBlock3 = DownConvolution(256, 512)
+        self.simpleConv = SimpleConvolution(input_channel, 64, pad)
+        self.downConvBlock1 = DownConvolution(64, 128, pad)
+        self.downConvBlock2 = DownConvolution(128, 256, pad)
+        self.downConvBlock3 = DownConvolution(256, 512, pad)
         self.midMaxpool = nn.MaxPool2d(2, 2)
-        self.bridge = UpConvolution(512, 1024)
-        self.upConvBlock1 = UpConvolution(1024, 512)
-        self.upConvBlock2 = UpConvolution(512, 256)
-        self.upConvBlock3 = UpConvolution(256, 128)
-        self.lastConv = LastConvolution(128, 64, num_classes)
+        self.bridge = UpConvolution(512, 1024, pad)
+        self.upConvBlock1 = UpConvolution(1024, 512, pad)
+        self.upConvBlock2 = UpConvolution(512, 256, pad)
+        self.upConvBlock3 = UpConvolution(256, 128, pad)
+        self.lastConv = LastConvolution(128, 64, num_classes, pad)
 
         self.n_channels = input_channel
         self.n_classes = num_classes
@@ -140,10 +145,10 @@ if __name__ == "__main__":
     torch.no_grad()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    unet = UNet(1, 2).cuda()
+    unet = UNet(1, 2, pad=True).cuda()
 
     img = Image.open("../data/Montgomery/images/MCUCXR_0001_0.png")
-    img_resized = img.resize((572, 572))
+    img_resized = img.resize((512, 512))
 
     convert_tensor = transforms.ToTensor()
     inp = convert_tensor(img_resized).to(device).unsqueeze(0)
