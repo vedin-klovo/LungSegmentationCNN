@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch import Tensor
 from torchvision import transforms
 from PIL import Image
+import numpy as np
 
 
 def crop_img(source_tensor: Tensor, target_tensor: Tensor):
@@ -136,11 +137,10 @@ class UNet(nn.Module):
 
 
 if __name__ == "__main__":
-    torch.cuda.empty_cache()
     torch.no_grad()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    unet = UNet(1, 1).cuda()
+    unet = UNet(1, 2).cuda()
 
     img = Image.open("../data/Montgomery/images/MCUCXR_0001_0.png")
     img_resized = img.resize((572, 572))
@@ -158,7 +158,7 @@ if __name__ == "__main__":
     full_mask = tf(probs.cpu()).squeeze()
 
     mask_np = (full_mask > 0.5).numpy()
-    im_out = Image.fromarray(mask_np)
+    im_out = Image.fromarray((np.swapaxes(mask_np, 0, 2) * 255).astype(np.uint8))
     im_out.save("test.png")
 
 
