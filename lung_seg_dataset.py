@@ -45,10 +45,14 @@ class LungSegmentationDataset(Dataset):
                 image_numpy = image_numpy[np.newaxis, ...]
             else:
                 image_numpy = image_numpy.transpose((2, 0, 1))
-
-        image_numpy = image_numpy / 255.0
-
-        return image_numpy
+            image_numpy = image_numpy / 255.0
+            return image_numpy
+        else:
+            labels = np.unique(image_numpy)
+            image_numpy_fin = np.zeros(image_numpy.shape)
+            for i, val in enumerate(list(labels)):
+                image_numpy_fin[image_numpy == val] = i
+            return image_numpy_fin
 
     def __getitem__(self, idx):
         name = self.ids[idx]
@@ -94,10 +98,24 @@ class MontgomeryDataset(LungSegmentationDataset):
         super().__init__(root_dir, mask_suffix, transforms, input_size, output_size)
 
 
+class JSRTDataset(LungSegmentationDataset):
+    def __init__(
+            self,
+            root_dir: str = 'data/JSRT',
+            mask_suffix: str = '_label',
+            transforms: Transforms = None,
+            input_size: Tuple[int, int] = (256, 256),
+            output_size: Tuple[int, int] = (256, 256),
+    ):
+        super(JSRTDataset, self).__init__(root_dir, mask_suffix, transforms, input_size, output_size)
+
+
 if __name__ == '__main__':
     shenzhen = ShenzhenDataset()
     print(len(shenzhen))
     montgomery = MontgomeryDataset()
     print(len(shenzhen))
+    jsrt = JSRTDataset()
+    print(len(jsrt))
 
 

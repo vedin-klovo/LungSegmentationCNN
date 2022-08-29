@@ -1,15 +1,17 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import logging
-
 from typing import Tuple
 from enum import IntEnum
 from tqdm import tqdm
 from torch import optim
+from evaluate import evaluate
 from unet.unet import UNet
-from lung_seg_dataset import MontgomeryDataset, ShenzhenDataset
+from lung_seg_dataset import MontgomeryDataset, ShenzhenDataset, JSRTDataset
 from torch.utils.data import DataLoader, random_split
 import wandb
+from utils.dice_score import dice_loss
 
 dir_checkpoints = './checkpoints'
 
@@ -17,6 +19,7 @@ dir_checkpoints = './checkpoints'
 class DatasetChoice(IntEnum):
     SHENZHEN = 0,
     MONTGOMERY = 1,
+    JSRT = 2,
 
 
 def train_net(
@@ -31,9 +34,11 @@ def train_net(
         input_size: Tuple[int, int] = (572, 572),
 ):
     if dataset_choice == DatasetChoice.SHENZHEN:
-        dataset = ShenzhenDataset()
+        dataset = ShenzhenDataset(input_size=input_size, output_size=input_size)
     elif dataset_choice == DatasetChoice.MONTGOMERY:
-        dataset = MontgomeryDataset()
+        dataset = MontgomeryDataset(input_size=input_size, output_size=input_size)
+    elif dataset_choice == DatasetChoice.JSRT:
+        dataset = JSRTDataset(input_size=input_size, output_size=input_size)
     else:
         raise Exception("Wrong dataset choice.")
 
@@ -71,8 +76,8 @@ def train_net(
 
     optimizer = optim.RMSprop(net.parameters(), lr=learning_rate, weight_decay=1e-8, momentum=0.9)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=2)
-    # grad_scaler = torch.cuda.amp.GradScaler(enabled=True)
     criterion = nn.CrossEntropyLoss()
+
     global_step = 0
 
     # 5. Begin training
@@ -91,22 +96,18 @@ def train_net(
 
                 images = images.to(device=device, dtype=torch.float32)
                 true_masks = true_masks.to(device=device, dtype=torch.long)
-
                 optimizer.zero_grad(set_to_none=True)
 
-                with torch.set_grad_enabled(True):
-                    masks_pred = net(images)
-                    loss = criterion(masks_pred, true_masks)
-                    loss.backward()
-                    optimizer.step()
-                           #+ dice_loss(F.softmax(masks_pred, dim=1).float(),
-                           #            F.one_hot(true_masks, net.n_classes).permute(0, 3, 1, 2).float(),
-                           #            multiclass=True)
-
-                # optimizer.zero_grad(set_to_none=True)
-                #grad_scaler.scale(loss).backward()
-                #grad_scaler.step(optimizer)
-                #grad_scaler.update()
+                masks_pred = net(images)
+                loss = criterion(masks_pred, true_masks) + \
+                    dice_loss(
+                            F.softmax(masks_pred, dim=1).float(),
+                            F.one_hot(true_masks, net.n_classes).permute(0, 3, 1, 2).float(),
+                            multiclass=True
+                        )
+                optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                optimizer.step()
 
                 pbar.update(images.shape[0])
                 global_step += 1
@@ -128,7 +129,7 @@ def train_net(
                             histograms['Weights/' + tag] = wandb.Histogram(value.data.cpu())
                             histograms['Gradients/' + tag] = wandb.Histogram(value.grad.data.cpu())
 
-                        val_score = 0  # evaluate(net, val_loader, device)
+                        val_score = evaluate(net, val_loader, device)
                         scheduler.step(val_score)
 
                         logging.info('Validation Dice score: {}'.format(val_score))
@@ -146,10 +147,8 @@ def train_net(
                         })
 
         if save_checkpoint:
-            pass
-            # Path(dir_checkpoint).mkdir(parents=True, exist_ok=True)
-            # torch.save(net.state_dict(), str(dir_checkpoint / 'checkpoint_epoch{}.pth'.format(epoch)))
-            # logging.info(f'Checkpoint {epoch} saved!')
+            torch.save(net.state_dict(), dir_checkpoints + '/checkpoint_epoch{}.pth'.format(epoch))
+            logging.info(f'Checkpoint {epoch} saved!')
 
 
 if __name__ == '__main__':
@@ -157,7 +156,7 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f"Using device: {device}")
 
-    net = UNet(input_channel=1, num_classes=2, pad=True)
+    net = UNet(input_channel=1, num_classes=4, pad=True)
 
     logging.info(f'Network:\n'
                  f'\t{net.n_channels} input channels\n'
@@ -167,7 +166,18 @@ if __name__ == '__main__':
     net.to(device)
 
     try:
-        train_net(net, device)
+        train_net(
+            net=net,
+            device=device,
+            dataset_choice=DatasetChoice.JSRT,
+            epochs=16,
+            batch_size=1,
+            learning_rate=1e-5,
+            train_percent=0.9,
+            save_checkpoint=True,
+            input_size=(256, 256)
+        )
+
     except KeyboardInterrupt:
         torch.save(net.state_dict(), 'INTERRUPTED.pth')
         logging.info('Saved interrupt')
